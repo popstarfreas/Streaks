@@ -1,23 +1,23 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using System.Timers;
 using System.Linq;
 using Terraria;
 using TerrariaApi.Server;
 using TShockAPI;
-using TShockAPI.Hooks;
+using Microsoft.Xna.Framework;
 
 namespace Streaks
 {
-	[ApiVersion(1,21)]
+	[ApiVersion(2, 0)]
 	public class Streaks : TerrariaPlugin
 	{
 		public static readonly List<Player> Players = new List<Player>();
 		public DateTime LastUpdate = DateTime.UtcNow;
 		public Timer OnSecondUpdate;
         public static Config Config = new Config();
+        public static DateTime[] Times = new DateTime[255];
 
         public override string Author
 		{
@@ -61,7 +61,6 @@ namespace Streaks
 			ServerApi.Hooks.NetGreetPlayer.Register(this, GreetPlayer);
 			ServerApi.Hooks.ServerLeave.Register(this, PlayerLeave);
 			ServerApi.Hooks.NetGetData.Register(this, GetData);
-            ServerApi.Hooks.NetSendData.Register(this, OnSendData);
 
 			GetDataHandlers.InitGetDataHandler();
 
@@ -102,7 +101,6 @@ namespace Streaks
 				ServerApi.Hooks.NetGreetPlayer.Deregister (this, GreetPlayer);
 				ServerApi.Hooks.ServerLeave.Deregister (this, PlayerLeave);
                 ServerApi.Hooks.NetGetData.Deregister(this, GetData);
-                ServerApi.Hooks.NetSendData.Deregister(this, OnSendData);
                 base.Dispose (disposing);
 			}
         }
@@ -113,12 +111,6 @@ namespace Streaks
                 Config.WriteTemplates(path);
             Config = Config.Read(path);
             e.Player.SendSuccessMessage("Reloaded Streaks config.");
-        }
-
-        private void OnSendData(SendDataEventArgs args)
-        {
-            if (args.MsgId == PacketTypes.UpdateTileEntity)
-                args.Handled = true;
         }
 
         private void GreetPlayer(GreetPlayerEventArgs args)

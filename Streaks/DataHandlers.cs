@@ -33,8 +33,8 @@ namespace Streaks
 		{
 			_getDataHandlerDelegates = new Dictionary<PacketTypes, GetDataHandlerDelegate>
 			{
-				{PacketTypes.PlayerKillMe, HandlePlayerKillMe},
-				{PacketTypes.PlayerDamage, HandlePlayerDamage}
+				{PacketTypes.PlayerDeathV2, HandlePlayerKillMe},
+				{PacketTypes.PlayerHurtV2, HandlePlayerDamage}
 			};
 		}
 
@@ -60,15 +60,68 @@ namespace Streaks
 			if (args.Player == null) return false;
 			var index = args.Player.Index;
 			var id = args.Data.ReadByte();
-			var direction = (byte)(args.Data.ReadByte() - 1);
-			var dmg = args.Data.ReadInt16();
-			var pvp = args.Data.ReadByte() == 1;
-			var text = args.Data.ReadString();
-			var player = Streaks.Players.FirstOrDefault(p => p != null && p.index == index);
+            var damageSourceFlags = (BitsByte) args.Data.ReadByte();
+            if (damageSourceFlags[0])
+            {
+                var sourcePlayerIndex = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[1])
+            {
+                var sourceNPCIndex = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[2])
+            {
+                var sourceProjectileIndex = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[3])
+            {
+                var sourceOtherIndex = args.Data.ReadByte();
+            }
+            if (damageSourceFlags[4])
+            {
+                var sourceProjectileType = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[5])
+            {
+                var sourceItemType = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[6])
+            {
+                var sourceItemPrefix = args.Data.ReadByte();
+            }
+            var dmg = args.Data.ReadInt16();
+            var direction = (byte)(args.Data.ReadByte() - 1);
+            var flags = (BitsByte) args.Data.ReadByte();
+            var crit = flags[0];
+            var pvp = flags[1];
+            var player = Streaks.Players.FirstOrDefault(p => p != null && p.index == index);
 			
 			if (player == null)
 				return false;
-            
+
+            // Rate Limit
+            // This will cause long respawn times
+            if ((DateTime.UtcNow - Streaks.Times[index]).TotalMilliseconds < 500)
+            {
+                foreach (var tplayers in TShock.Players.Where(p => p != null && p.Index != player.index))
+                {
+                    tplayers.SendData(PacketTypes.PlayerKillMe, "", player.index, (float)(direction + 1), (float)dmg, (float)(pvp ? 1 : 0), 0);
+                }
+                return true;
+            }
+
+            Streaks.Times[index] = DateTime.UtcNow;
+
+            int r = rnd.Next(Streaks.Config.DeathMessages.Count());
+            string ctext = Streaks.Config.DeathMessages[r];
+            if (player.Killer != null && player.TSPlayer.hostile)
+            {
+                TSPlayer.All.SendMessage(String.Format(ctext, args.Player.TPlayer.name, player.Killer.Name), 255, 50, 50);
+            }
+
+            player.TsPlayer.Spawn();
+            NetMessage.SendPlayerDeath(args.Player.Index, new Terraria.DataStructures.PlayerDeathReason(), dmg, 0, pvp, -1, args.Player.Index);
+
             if (player.Killer != null && player.Killer.TSPlayer.hostile) {
 				if (player.Streak >= 5)
                 {
@@ -99,7 +152,7 @@ namespace Streaks
 				player.Streak = -1;
 			}
 
-            return false;
+            return true;
 		}
 
 		private static bool HandlePlayerDamage(GetDataHandlerArgs args)
@@ -107,10 +160,38 @@ namespace Streaks
 			if (args.Player == null) return false;
 			var index = args.Player.Index;
 			var playerId = (byte) args.Data.ReadByte();
-			args.Data.ReadByte();
-			var damage = args.Data.ReadInt16();
-			var crit = args.Data.ReadBoolean();
-			args.Data.ReadByte();
+            var damageSourceFlags = (BitsByte)args.Data.ReadByte();
+            if (damageSourceFlags[0])
+            {
+                var sourcePlayerIndex = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[1])
+            {
+                var sourceNPCIndex = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[2])
+            {
+                var sourceProjectileIndex = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[3])
+            {
+                var sourceOtherIndex = args.Data.ReadByte();
+            }
+            if (damageSourceFlags[4])
+            {
+                var sourceProjectileType = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[5])
+            {
+                var sourceItemType = args.Data.ReadInt16();
+            }
+            if (damageSourceFlags[6])
+            {
+                var sourceItemPrefix = args.Data.ReadByte();
+            }
+            var damage = args.Data.ReadInt16(); 
+            args.Data.ReadByte();
+			var crit = args.Data.ReadByte();
 
 			//player being attacked
 			var player = Streaks.Players.FirstOrDefault(p => p != null && p.index == playerId);
