@@ -10,7 +10,7 @@ using Microsoft.Xna.Framework;
 
 namespace Streaks
 {
-	[ApiVersion(2, 0)]
+	[ApiVersion(2, 1)]
 	public class Streaks : TerrariaPlugin
 	{
 		public static readonly List<Player> Players = new List<Player>();
@@ -18,6 +18,7 @@ namespace Streaks
 		public Timer OnSecondUpdate;
         public static Config Config = new Config();
         public static DateTime[] Times = new DateTime[255];
+        private Random Rand = new Random();
 
         public override string Author
 		{
@@ -53,16 +54,16 @@ namespace Streaks
 
 		public Streaks(Main game) : base(game)
         {
-            Order = 1;
+            Order = 14;
         }
 		
 		public override void Initialize()
 		{
 			ServerApi.Hooks.NetGreetPlayer.Register(this, GreetPlayer);
 			ServerApi.Hooks.ServerLeave.Register(this, PlayerLeave);
-			ServerApi.Hooks.NetGetData.Register(this, GetData);
+            ServerApi.Hooks.GameInitialize.Register(this, OnInitialize);
 
-			GetDataHandlers.InitGetDataHandler();
+            GetDataHandlers.InitGetDataHandler();
 
 			TShockAPI.Commands.ChatCommands.Add (new Command ("streak.check", CheckStreakCommand, "streak"));
             TShockAPI.Commands.ChatCommands.Add(new Command("streak.reload", Reload, "streaksreload"));
@@ -76,7 +77,56 @@ namespace Streaks
             Config = Config.Read(path);
         }
 
-		private void SecondUpdate(object sender, ElapsedEventArgs args)
+        private void OnInitialize(EventArgs args)
+        {
+            PvPController.PvPController.OnPlayerKill += new PvPController.PvPController.PlayerKillHandler(HandlePlayerKill);
+        }
+
+        private void HandlePlayerKill(object sender, PvPController.PlayerKillEventArgs args)
+        {
+            if (args.Victim == null || args.Killer == null)
+            {
+                return;
+            }
+
+            var killer = Players.FirstOrDefault(p => p != null && p.index == args.Killer.Index);
+            var victim = args.Killer.Index != args.Victim.Index ? Players.FirstOrDefault(p => p != null && p.index == args.Victim.Index) : null;
+
+            if (killer != null && victim != null)
+            {
+                if (victim.Streak >= 5)
+                {
+                    int es = Rand.Next(Config.EndStreakMessages.Count());
+                    TSPlayer.All.SendMessage(String.Format( Config.EndStreakMessages[es], killer.Name, victim.Name, victim.Streak), 170, 0, 255);
+                    victim.Streak = -1;
+                }
+                else
+                {
+                    if (victim.Streak <= 0)
+                    {
+                        --victim.Streak;
+                        if (victim.Streak <= 10 && victim.Streak % 10 == 0)
+                        {
+                            int ds = Rand.Next(Config.DeathStreakMessages.Count());
+                            TSPlayer.All.SendMessage(String.Format(Config.DeathStreakMessages[ds], victim.Name, Math.Abs(victim.Streak)), 8, 255, 131);
+                        }
+                    }
+                    else
+                    {
+                        victim.Streak = -1;
+                    }
+                }
+
+                killer.Streak = killer.Streak >= 0 ? killer.Streak + 1 : 1;
+                if (killer.Streak >= 5 && killer.Streak % 5 == 0)
+                {
+                    int ks = Rand.Next(Config.KillStreakMessages.Count());
+                    TSPlayer.All.SendMessage(String.Format(Config.KillStreakMessages[ks], killer.Name, killer.Streak), 255, 0, 251);
+                }
+            }
+        }
+
+        private void SecondUpdate(object sender, ElapsedEventArgs args)
 		{
 			lock (Players) {
 				foreach (var player in Players.Where(p => p != null)) {
@@ -100,7 +150,6 @@ namespace Streaks
 			if (disposing) {
 				ServerApi.Hooks.NetGreetPlayer.Deregister (this, GreetPlayer);
 				ServerApi.Hooks.ServerLeave.Deregister (this, PlayerLeave);
-                ServerApi.Hooks.NetGetData.Deregister(this, GetData);
                 base.Dispose (disposing);
 			}
         }
@@ -115,13 +164,12 @@ namespace Streaks
 
         private void GreetPlayer(GreetPlayerEventArgs args)
 		{
-			if (!args.Handled) {
-				var exists = Players.Where(p => p != null && p.index == args.Who).Count() > 0;
-				if (exists) {
-					Players.RemoveAll (p => p != null && p.index == args.Who);
-				}
-				Players.Add (new Player (args.Who));
+            if (TShock.Players[args.Who] == null) return;
+            var exists = Players.Where(p => p != null && p.index == args.Who).Count() > 0;
+			if (exists) {
+				Players.RemoveAll (p => p != null && p.index == args.Who);
 			}
+			Players.Add (new Player (args.Who));
 		}
 
 		private void PlayerLeave(LeaveEventArgs args)
@@ -137,37 +185,6 @@ namespace Streaks
 				return;
 
 			player.TsPlayer.SendMessage (String.Format("You are on a {0} {1}streak.", Math.Abs(player.Streak), player.Streak > -1 ? "Kill" : "Death"), Color.Yellow);
-		}
-
-		private void GetData(GetDataEventArgs args)
-		{
-			var type = args.MsgID;
-			var player = TShock.Players[args.Msg.whoAmI];
-
-			if (player == null)
-			{
-				args.Handled = true;
-				return;
-			}
-
-			if (!player.ConnectionAlive)
-			{
-				args.Handled = true;
-				return;
-			}
-
-			using (var data = new MemoryStream(args.Msg.readBuffer, args.Index, args.Length))
-			{
-				try
-				{
-					if (GetDataHandlers.HandlerGetData(type, player, data))
-						args.Handled = true;
-				}
-				catch (Exception ex)
-				{
-					TShock.Log.ConsoleError(ex.ToString());
-				}
-			}
 		}
 	}
 }
